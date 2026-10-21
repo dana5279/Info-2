@@ -143,4 +143,57 @@ def compress(in_path, out_path, limit):
     print("Written to     :", out_path)
 
 
+import json
+import struct
+
+
+# ------------------------------------------------------------ decompression
+def decompress(in_path, out_path):
+    with open(in_path, "rb") as f:
+        raw = f.read()
+
+    
+    header_len = struct.unpack(">I", raw[:4])[0]
+    header = json.loads(raw[4:4 + header_len].decode("utf-8"))
+    stream = raw[4 + header_len:]
+
+    total = header["symbols"]        
+    padding = header["padding"]      
+    others = header["others"]        
+    others_code = header["others_code"]
+    width = header["width"]          
+
+    
+    decode = {code: int(s) for s, code in header["codes"].items()}
+
+    
+    bits = "".join(format(b, "08b") for b in stream)
+    if padding:
+        bits = bits[:-padding]
+
+    
+    out = bytearray()
+    cur = ""
+    i = 0
+    while len(out) < total:
+        cur += bits[i]
+        i += 1
+        if cur in decode:                         
+            out.append(decode[cur])
+            cur = ""
+        elif others_code is not None and cur == others_code:
+            
+            idx = int(bits[i:i + width], 2) if width else 0
+            i += width
+            out.append(others[idx])
+            cur = ""
+
+    with open(out_path, "wb") as f:
+        f.write(out)
+
+    print("Decoded symbols:", len(out))
+    print("Written to     :", out_path)
+
+
+
 
