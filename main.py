@@ -2,11 +2,11 @@
 Modified Huffman - COMPRESSION
 
 Lecture idea:
-  * Pick a Minimum Limit of Symbol Probabilities (e.g. 0.05).
-  * Symbols with probability <= limit are grouped into one group: "Others".
-  * Build a normal Huffman tree over: frequent symbols + "Others".
-  * Frequent symbol  -> its Huffman code.
-  * Symbol in Others -> Huffman code of "Others" + its ORIGINAL (fixed-length) code.
+- Pick a Minimum Limit of Symbol Probabilities (e.g. 0.05).
+- Symbols with probability <= limit are grouped into one group: "Others".
+- Build a normal Huffman tree over: frequent symbols + "Others".
+- Frequent symbol  -> its Huffman code.
+- Symbol in Others -> Huffman code of "Others" + its ORIGINAL (fixed-length) code.
 
 Usage (from your main file):
     from huffman_compress import compress
@@ -195,5 +195,26 @@ def decompress(in_path, out_path):
     print("Written to     :", out_path)
 
 
+if __name__ == "__main__":
+    import os
 
-
+    # create a sample file if it doesn't exist just to test
+    if not os.path.exists("file.txt"):
+        with open("file.txt", "w") as f:
+            f.write("AAAAABBBBBCCCCCDDDDD12345")
+            
+    print("starting compression...")
+    compress("file.txt", "compressed.bin", 0.05)
+    
+    print("\nstarting decompression...")
+    decompress("compressed.bin", "decompressed.txt")
+    
+    # verify if it worked
+    f1 = open("file.txt", "rb").read()
+    f2 = open("decompressed.txt", "rb").read()
+    
+    print("\n--- results ---")
+    if f1 == f2:
+        print("success: files match!")
+    else:
+        print("error: files are different")
