@@ -1,71 +1,45 @@
-"""
-Modified Huffman - COMPRESSION
 
-Lecture idea:
-- Pick a Minimum Limit of Symbol Probabilities (e.g. 0.05).
-- Symbols with probability <= limit are grouped into one group: "Others".
-- Build a normal Huffman tree over: frequent symbols + "Others".
-- Frequent symbol  -> its Huffman code.
-- Symbol in Others -> Huffman code of "Others" + its ORIGINAL (fixed-length) code.
-
-Usage (from your main file):
-    from huffman_compress import compress
-    compress("input.txt", "out.bin", 0.05)
-
-Compressed file layout (for the decompression code):
-    [4 bytes big-endian: header length N]
-    [N bytes: JSON header]
-    [packed code bits, last byte padded with zeros]
-
-JSON header keys:
-    symbols     original number of bytes
-    padding     number of unused bits at the end of the last byte
-    codes       {"<byte value>": "<huffman code>"} for frequent symbols
-    others_code Huffman code of the Others group (null if no Others)
-    others      sorted list of byte values inside Others
-    width       bits of the original code; index of the symbol in `others`
-                written in binary with `width` bits (0 bits if only one)
-"""
 
 import heapq
 import itertools
 import json
-import math
+import os
 import struct
 from collections import Counter
 
-OTHERS = "OTHERS"  # name of the grouped symbol inside the Huffman tree
+OTHERS = "OTHERS"  
 
+INPUT_FILE = "input.txt"             
+COMPRESSED_FILE = "compressed.bin"   
+DECOMPRESSED_FILE = "decompressed.txt"  
 
-# ---------------------------------------------------------------- Huffman
 def build_huffman_codes(freqs):
     """freqs: {symbol: count}  ->  {symbol: '0101'} (standard Huffman)."""
-    if len(freqs) == 1:                      # only one symbol -> give it "0"
+    if len(freqs) == 1:                      
         return {next(iter(freqs)): "0"}
 
-    tie = itertools.count()                  # keeps heap order deterministic
+    tie = itertools.count()                  
     heap = [(c, next(tie), s) for s, c in freqs.items()]
     heapq.heapify(heap)
 
     while len(heap) > 1:
-        c1, _, left = heapq.heappop(heap)    # two lowest probabilities
+        c1, _, left = heapq.heappop(heap)    
         c2, _, right = heapq.heappop(heap)
         heapq.heappush(heap, (c1 + c2, next(tie), (left, right)))
 
     codes = {}
 
     def walk(node, path):
-        if isinstance(node, tuple):          # internal node
+        if isinstance(node, tuple):          
             walk(node[0], path + "0")
             walk(node[1], path + "1")
-        else:                                # leaf
+        else:                                
             codes[node] = path
 
     walk(heap[0][2], "")
     return codes
 
 
-# ------------------------------------------------------------ compression
 def compress(in_path, out_path, limit):
     with open(in_path, "rb") as f:
         data = f.read()
@@ -73,7 +47,6 @@ def compress(in_path, out_path, limit):
     total = len(data)
     counts = Counter(data)
 
-    # 1) split symbols: frequent vs "Others" (probability <= limit)
     frequent = {s: c for s, c in counts.items() if c / total > limit}
     others = sorted(s for s, c in counts.items() if c / total <= limit)
 
@@ -81,15 +54,15 @@ def compress(in_path, out_path, limit):
     if others:
         tree_freqs[OTHERS] = sum(counts[s] for s in others)
 
-    # 2) Huffman codes (frequent symbols + Others)
+   
     codes = build_huffman_codes(tree_freqs) if tree_freqs else {}
 
-    # 3) original (fixed-length) code for symbols inside Others
+   
     width = (len(others) - 1).bit_length() if others else 0
     orig_code = {s: format(i, "0{}b".format(width)) if width else ""
                  for i, s in enumerate(others)}
 
-    # 4) encode the whole file into a bit string, then pack into bytes
+   
     full_code = {}
     for s in frequent:
         full_code[s] = codes[s]
@@ -97,8 +70,8 @@ def compress(in_path, out_path, limit):
         full_code[s] = codes[OTHERS] + orig_code[s]
 
     out = bytearray()
-    acc = 0          # bit accumulator
-    nbits = 0        # bits currently in accumulator
+    acc = 0          
+    nbits = 0        
     total_bits = 0
     for b in data:
         code = full_code[b]
@@ -113,23 +86,23 @@ def compress(in_path, out_path, limit):
     if nbits:
         out.append((acc << padding) & 0xFF)
 
-    # 5) header (overhead, any format is allowed) -> JSON, then the bits
+    
     header = {
-        "symbols": total,                                    # original byte count
-        "padding": padding,                                  # unused bits in last byte
-        "codes": {str(s): codes[s] for s in frequent},       # symbol -> huffman code
-        "others_code": codes.get(OTHERS),                    # huffman code of Others
-        "others": others,                                    # list of Others symbols
-        "width": width,                                      # bits of original code
+        "symbols": total,
+        "padding": padding,
+        "codes": {str(s): codes[s] for s in frequent},
+        "others_code": codes.get(OTHERS),
+        "others": others,
+        "width": width,
     }
     header_bytes = json.dumps(header).encode("utf-8")
 
     with open(out_path, "wb") as f:
-        f.write(struct.pack(">I", len(header_bytes)))        # header length
+        f.write(struct.pack(">I", len(header_bytes)))       
         f.write(header_bytes)
         f.write(out)
 
-    # 6) report
+
     print("Limit:", limit)
     print("Symbol  Prob     Code")
     for s in sorted(frequent, key=lambda x: -frequent[x]):
@@ -143,46 +116,37 @@ def compress(in_path, out_path, limit):
     print("Written to     :", out_path)
 
 
-import json
-import struct
 
-
-# ------------------------------------------------------------ decompression
 def decompress(in_path, out_path):
     with open(in_path, "rb") as f:
         raw = f.read()
 
-    
     header_len = struct.unpack(">I", raw[:4])[0]
     header = json.loads(raw[4:4 + header_len].decode("utf-8"))
     stream = raw[4 + header_len:]
 
-    total = header["symbols"]        
-    padding = header["padding"]      
-    others = header["others"]        
+    total = header["symbols"]
+    padding = header["padding"]
+    others = header["others"]
     others_code = header["others_code"]
-    width = header["width"]          
+    width = header["width"]
 
-    
     decode = {code: int(s) for s, code in header["codes"].items()}
 
-    
     bits = "".join(format(b, "08b") for b in stream)
     if padding:
         bits = bits[:-padding]
 
-    
     out = bytearray()
     cur = ""
     i = 0
     while len(out) < total:
         cur += bits[i]
         i += 1
-        if cur in decode:                         
+        if cur in decode:
             out.append(decode[cur])
             cur = ""
         elif others_code is not None and cur == others_code:
-            
             idx = int(bits[i:i + width], 2) if width else 0
             i += width
             out.append(others[idx])
@@ -195,26 +159,65 @@ def decompress(in_path, out_path):
     print("Written to     :", out_path)
 
 
-if __name__ == "__main__":
-    import os
 
-    # create a sample file if it doesn't exist just to test
-    if not os.path.exists("file.txt"):
-        with open("file.txt", "w") as f:
-            f.write("AAAAABBBBBCCCCCDDDDD12345")
-            
-    print("starting compression...")
-    compress("file.txt", "compressed.bin", 0.05)
-    
-    print("\nstarting decompression...")
-    decompress("compressed.bin", "decompressed.txt")
-    
-    # verify if it worked
-    f1 = open("file.txt", "rb").read()
-    f2 = open("decompressed.txt", "rb").read()
-    
-    print("\n--- results ---")
-    if f1 == f2:
-        print("success: files match!")
-    else:
-        print("error: files are different")
+def read_text():
+    """Read several lines from the user until an empty line is entered."""
+    print("Type your text. Press Enter on an empty line to finish:")
+    lines = []
+    while True:
+        line = input()
+        if line == "":
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def read_limit():
+    raw = input("Minimum limit of symbol probability (default 0.05): ").strip()
+    if not raw:
+        return 0.05
+    try:
+        value = float(raw)
+        if 0 <= value < 1:
+            return value
+    except ValueError:
+        pass
+    print("Invalid value, using 0.05")
+    return 0.05
+
+
+def main():
+    while True:
+        print("\n===== Modified Huffman =====")
+        print("1) Compress")
+        print("2) Decompress")
+        print("3) Exit")
+        choice = input("Choose: ").strip()
+
+        if choice == "1":
+            text = read_text()
+            if not text:
+                print("Nothing to compress.")
+                continue
+            with open(INPUT_FILE, "w", encoding="utf-8") as f:
+                f.write(text)
+            print("Saved your text to", INPUT_FILE)
+            limit = read_limit()
+            compress(INPUT_FILE, COMPRESSED_FILE, limit)
+
+        elif choice == "2":
+            if not os.path.exists(COMPRESSED_FILE):
+                print("No", COMPRESSED_FILE, "found. Compress something first.")
+                continue
+            decompress(COMPRESSED_FILE, DECOMPRESSED_FILE)
+
+        elif choice == "3":
+            print("Bye!")
+            break
+
+        else:
+            print("Invalid choice, enter 1, 2 or 3.")
+
+
+if __name__ == "__main__":
+    main()
